@@ -14,6 +14,9 @@ import {
   TUNNEL_PROTOCOLS,
   normalizeForwardProtocolSettings,
 } from "../../shared/forwardTypes";
+import { AGENT_VERSION, APP_VERSION } from "../../shared/versions";
+
+export { AGENT_VERSION, APP_VERSION } from "../../shared/versions";
 
 /**
  * 系统级别 router：
@@ -25,8 +28,6 @@ import {
 export const REPO_URL = "https://github.com/poouo/Forwardx";
 /** Telegram 双向消息机器人：用户可通过此反馈问题、接收补充信息 */
 export const TELEGRAM_BOT_URL = "https://t.me/miyin_private_bot";
-export const APP_VERSION = "2.2.64";
-export const AGENT_VERSION = "2.2.48";
 const UPDATE_CHECK_COOLDOWN_MS = 60 * 1000;
 const MANUAL_LOCAL_UPGRADE_COMMAND =
   "curl -fsSL https://raw.githubusercontent.com/poouo/Forwardx/main/scripts/install-panel-local.sh | sudo bash -s -- upgrade";

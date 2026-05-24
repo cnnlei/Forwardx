@@ -5,7 +5,7 @@ import { appendPanelLog } from "./_core/panelLogger";
 import { generateFullInstallScript, generateInstallScript } from "./agentInstallScripts";
 import { registerAgentEventClient, unregisterAgentEventClient } from "./agentEvents";
 import { agentEncryptionMiddleware } from "./agentEncryptionMiddleware";
-import { compareVersions } from "./agentRouteUtils";
+import { isAgentVersionAtLeast } from "./agentRouteUtils";
 import { resolvePanelUrl } from "./agentPanelUrl";
 import { registerAgentStatusRoutes } from "./agentStatusRoutes";
 import { registerAgentSelfTestRoutes } from "./agentSelfTestRoutes";
@@ -43,7 +43,7 @@ agentRouter.get("/api/agent/events", async (req: Request, res: Response) => {
       await db.updateHostHeartbeat(host.id, { agentVersion } as any);
       const requestedTargetVersion = (host as any).agentUpgradeTargetVersion || AGENT_VERSION;
       const agentUpgradeCompleted = (host as any).agentUpgradeRequested
-        && compareVersions(agentVersion, requestedTargetVersion) >= 0;
+        && isAgentVersionAtLeast(agentVersion, requestedTargetVersion);
       if (agentUpgradeCompleted) {
         await db.clearHostAgentUpgradeRequest(host.id);
       }

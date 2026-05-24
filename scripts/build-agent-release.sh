@@ -3,12 +3,16 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="$ROOT_DIR/dist/agent"
-VERSION="${1:-}"
-
-if [ -z "$VERSION" ]; then
-  VERSION="$(node -p "require('$ROOT_DIR/package.json').version")"
+REQUESTED_TAG="${1:-}"
+AGENT_VERSION="$(sed -nE "s/.*AGENT_VERSION[[:space:]]*=[[:space:]]*['\"]([^'\"]+)['\"].*/\1/p" "$ROOT_DIR/shared/versions.ts" | head -n 1)"
+if [ -z "$AGENT_VERSION" ]; then
+  echo "[agent] AGENT_VERSION not found in shared/versions.ts" >&2
+  exit 1
 fi
-VERSION="${VERSION#v}"
+VERSION="${AGENT_VERSION#v}"
+if [ -n "$REQUESTED_TAG" ] && [ "${REQUESTED_TAG#v}" != "$VERSION" ]; then
+  echo "[agent] release tag ${REQUESTED_TAG} detected; building Agent version ${VERSION} from shared/versions.ts"
+fi
 
 mkdir -p "$OUT_DIR"
 

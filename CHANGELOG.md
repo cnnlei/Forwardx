@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.2.65] - 2026-05-25
+
+### Fixed
+
+- Split panel and Agent version sources so Agent release binaries no longer inherit the panel tag or package version.
+- Treat previously misbuilt panel-versioned Agent reports such as 2.2.63/2.2.64 as outdated so they can be upgraded back to the correct Agent version line.
+
+### Changed
+
+- Bumped panel version to 2.2.65 and Agent target version to 2.2.49.
+
 ## [2.2.64] - 2026-05-25
 
 ### Added

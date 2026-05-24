@@ -55,6 +55,10 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import {
+  LEGACY_PANEL_VERSIONED_AGENT_MAX,
+  LEGACY_PANEL_VERSIONED_AGENT_MIN,
+} from "@shared/versions";
 
 function usePageVisible() {
   const [visible, setVisible] = useState(() => typeof document === "undefined" || document.visibilityState === "visible");
@@ -105,6 +109,19 @@ function pickLatestVersion(...versions: Array<string | null | undefined>) {
     .map(normalizeVersion)
     .filter(Boolean)
     .reduce((latest, version) => (compareVersions(version, latest) > 0 ? version : latest), "");
+}
+
+function isLegacyPanelVersionedAgent(version: string | null | undefined) {
+  const normalized = normalizeVersion(version);
+  return !!normalized
+    && compareVersions(normalized, LEGACY_PANEL_VERSIONED_AGENT_MIN) >= 0
+    && compareVersions(normalized, LEGACY_PANEL_VERSIONED_AGENT_MAX) <= 0;
+}
+
+function isAgentVersionBehind(version: string | null | undefined, target: string | null | undefined) {
+  if (!version || !target) return false;
+  if (isLegacyPanelVersionedAgent(version)) return true;
+  return compareVersions(version, target) < 0;
 }
 
 function hostAddressLines(host: any) {
@@ -180,7 +197,7 @@ function HostCard({
     const outDelta = Math.max(0, Number(latestMetric.networkOut || 0) - Number(previousMetric.networkOut || 0));
     return { in: inDelta / seconds, out: outDelta / seconds };
   }, [latestMetric, previousMetric]);
-  const agentNeedsUpdate = !!host.agentVersion && !!latestAgentVersion && compareVersions(host.agentVersion, latestAgentVersion) < 0;
+  const agentNeedsUpdate = isAgentVersionBehind(host.agentVersion, latestAgentVersion);
   const agentUpgrading = !!host.agentUpgradeRequested;
 
   return (
@@ -511,7 +528,7 @@ function HostsContent() {
   const isPending = createMutation.isPending || updateMutation.isPending;
   const onlineCount = useMemo(() => hosts?.filter((h) => h.isOnline).length ?? 0, [hosts]);
   const updateCount = useMemo(
-    () => hosts?.filter((h) => h.agentVersion && latestAgentVersion && compareVersions(h.agentVersion, latestAgentVersion) < 0).length ?? 0,
+    () => hosts?.filter((h) => isAgentVersionBehind(h.agentVersion, latestAgentVersion)).length ?? 0,
     [hosts, latestAgentVersion]
   );
   const requestAgentUpgrade = (host: any) => {
@@ -533,7 +550,7 @@ function HostsContent() {
       const latestHosts = await utils.hosts.list.fetch();
       const latestSettings = await utils.system.getSettings.fetch();
       const agentVersion = latestSettings?.agentVersion || "";
-      const count = latestHosts.filter((host: any) => host.agentVersion && agentVersion && compareVersions(host.agentVersion, agentVersion) < 0).length;
+      const count = latestHosts.filter((host: any) => isAgentVersionBehind(host.agentVersion, agentVersion)).length;
       toast.success(count > 0 ? `发现 ${count} 台 Agent 有新版本` : "Agent 版本检查完成，暂无新版本");
     } catch (err: any) {
       toast.error(err?.message || "检查 Agent 更新失败");
@@ -699,7 +716,7 @@ function HostsContent() {
                             <span className="text-xs font-mono text-muted-foreground">
                               {host.agentVersion ? `v${host.agentVersion}` : "-"}
                             </span>
-                            {host.agentVersion && latestAgentVersion && compareVersions(host.agentVersion, latestAgentVersion) < 0 && (
+                            {isAgentVersionBehind(host.agentVersion, latestAgentVersion) && (
                               <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-500">
                                 发现新版本
                               </Badge>

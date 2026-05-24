@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import * as db from "./db";
 import { AGENT_VERSION } from "./_core/systemRouter";
 import { isHostMetricsWatching } from "./agentEvents";
-import { compareVersions, parseSelfTestMeta, tunnelSecretSeed } from "./agentRouteUtils";
+import { isAgentVersionAtLeast, parseSelfTestMeta, tunnelSecretSeed } from "./agentRouteUtils";
 import { resolvePanelUrl } from "./agentPanelUrl";
 import {
   getForwardProtocolSettings,
@@ -1153,7 +1153,7 @@ agentRouter.post("/api/agent/heartbeat", async (req: Request, res: Response) => 
     const requestedTargetVersion = (host as any).agentUpgradeTargetVersion || AGENT_VERSION;
     const agentUpgradeCompleted = (host as any).agentUpgradeRequested
       && agentVersion
-      && compareVersions(agentVersion, requestedTargetVersion) >= 0;
+      && isAgentVersionAtLeast(agentVersion, requestedTargetVersion);
     if (agentUpgradeCompleted) {
       await db.clearHostAgentUpgradeRequest(host.id);
     }

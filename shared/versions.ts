@@ -1,0 +1,5 @@
+export const APP_VERSION = "2.2.65";
+export const AGENT_VERSION = "2.2.49";
+
+export const LEGACY_PANEL_VERSIONED_AGENT_MIN = "2.2.63";
+export const LEGACY_PANEL_VERSIONED_AGENT_MAX = "2.2.64";
