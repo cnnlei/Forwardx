@@ -217,13 +217,13 @@ function HostCard({
       <CardContent className="space-y-4">
         {/* 基本信息 */}
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
+          <div className="space-y-1 col-span-2">
             <p className="text-xs text-muted-foreground">地址</p>
             <div className="space-y-0.5">
               {hostAddressLines(host).map((item) => (
-                <p key={item.label} className="text-sm font-mono">
-                  <span className="mr-1 text-[10px] text-muted-foreground">{item.label}</span>
-                  {item.value}
+                <p key={item.label} className="flex min-w-0 items-start gap-1 text-sm font-mono leading-5">
+                  <span className="shrink-0 text-[10px] text-muted-foreground">{item.label}</span>
+                  <span className="min-w-0 flex-1 break-all">{item.value}</span>
                 </p>
               ))}
             </div>
@@ -635,7 +635,7 @@ function HostsContent() {
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="w-[50px]">状态</TableHead>
                       <TableHead>名称</TableHead>
-                      <TableHead>地址</TableHead>
+                      <TableHead className="min-w-[220px]">地址</TableHead>
                       <TableHead className="hidden md:table-cell">类型</TableHead>
                       <TableHead className="hidden lg:table-cell">端口区间</TableHead>
                       <TableHead className="hidden md:table-cell">系统</TableHead>
@@ -665,9 +665,9 @@ function HostsContent() {
                         <TableCell>
                           <div className="space-y-1">
                             {hostAddressLines(host).map((item) => (
-                              <div key={item.label} className="font-mono text-xs">
-                                <span className="mr-1 text-[10px] text-muted-foreground">{item.label}</span>
-                                {item.value}
+                              <div key={item.label} className="flex min-w-0 items-start gap-1 font-mono text-xs leading-5">
+                                <span className="shrink-0 text-[10px] text-muted-foreground">{item.label}</span>
+                                <span className="min-w-0 max-w-[260px] break-all">{item.value}</span>
                               </div>
                             ))}
                           </div>

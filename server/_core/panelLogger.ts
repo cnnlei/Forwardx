@@ -1,6 +1,7 @@
-type PanelLogLevel = "log" | "info" | "warn" | "error";
+export type PanelLogLevel = "log" | "info" | "warn" | "error";
+export type PanelLogFilterLevel = PanelLogLevel | "all";
 
-type PanelLogEntry = {
+export type PanelLogEntry = {
   id: number;
   level: PanelLogLevel;
   message: string;
@@ -45,6 +46,11 @@ export function getPanelLogs() {
   return logs;
 }
 
+export function getFilteredPanelLogs(level: PanelLogFilterLevel = "all") {
+  const currentLogs = getPanelLogs();
+  return level === "all" ? currentLogs : currentLogs.filter((entry) => entry.level === level);
+}
+
 export function getPanelLogSummary() {
   trimLogs();
   return logs.reduce<Record<string, number>>((acc, entry) => {
@@ -56,6 +62,30 @@ export function getPanelLogSummary() {
 
 export function clearPanelLogs() {
   logs = [];
+}
+
+export function formatPanelLogsForExport(level: PanelLogFilterLevel = "all", metadata: Record<string, unknown> = {}) {
+  const selectedLogs = getFilteredPanelLogs(level);
+  const summary = getPanelLogSummary();
+  const generatedAt = new Date().toISOString();
+  const header = [
+    "ForwardX Panel Logs",
+    `Generated At: ${generatedAt}`,
+    `Level: ${level}`,
+    `Exported Count: ${selectedLogs.length}`,
+    `Summary: all=${summary.all || 0}, log=${summary.log || 0}, info=${summary.info || 0}, warn=${summary.warn || 0}, error=${summary.error || 0}`,
+    ...Object.entries(metadata).map(([key, value]) => `${key}: ${String(value ?? "")}`),
+    "",
+    "---- Logs ----",
+  ];
+  const body = selectedLogs.map((entry) => {
+    return `[${entry.createdAt}] [${entry.level.toUpperCase()}] ${entry.message}`;
+  });
+  return {
+    content: [...header, ...body, ""].join("\n"),
+    count: selectedLogs.length,
+    generatedAt,
+  };
 }
 
 export function installPanelLogger() {

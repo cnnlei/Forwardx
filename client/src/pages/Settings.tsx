@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
@@ -971,8 +972,24 @@ function SettingsContent() {
 
 function PanelLogsSection() {
   const [logLevel, setLogLevel] = useState<"all" | "info" | "warn" | "error" | "log">("all");
+  const [exportLevel, setExportLevel] = useState<"all" | "info" | "warn" | "error" | "log">("all");
   const { data: panelLogs, refetch: refetchPanelLogs } = trpc.system.panelLogs.useQuery({ level: logLevel }, {
     refetchInterval: 10000,
+  });
+  const exportLogsMutation = trpc.system.exportPanelLogs.useMutation({
+    onSuccess: (data) => {
+      const blob = new Blob([data.content], { type: data.mimeType || "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = data.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`已导出 ${data.count} 条日志`);
+    },
+    onError: (err) => toast.error(err.message || "导出日志失败"),
   });
   const clearLogsMutation = trpc.system.clearPanelLogs.useMutation({
     onSuccess: async () => {
@@ -1005,9 +1022,30 @@ function PanelLogsSection() {
                 <FileText className="h-4 w-4 text-primary" />
                 面板日志
               </CardTitle>
-              <CardDescription>展示最近 24 小时的面板运行日志，隧道延迟测试也会记录排查信息。</CardDescription>
+              <CardDescription>展示最近 24 小时的面板运行日志，可按类别导出用于问题排查。</CardDescription>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-2">
+                <Select value={exportLevel} onValueChange={(value) => setExportLevel(value as typeof exportLevel)}>
+                  <SelectTrigger className="h-9 w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {levelTabs.map((tab) => (
+                      <SelectItem key={tab.value} value={tab.value}>{tab.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => exportLogsMutation.mutate({ level: exportLevel })}
+                  disabled={exportLogsMutation.isPending}
+                >
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  导出日志
+                </Button>
+              </div>
               <Button variant="outline" size="sm" onClick={() => refetchPanelLogs()}>刷新</Button>
               <Button variant="destructive" size="sm" onClick={() => clearLogsMutation.mutate()} disabled={clearLogsMutation.isPending}>清空日志</Button>
             </div>

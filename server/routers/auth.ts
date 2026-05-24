@@ -81,6 +81,22 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function maskIdentifier(value?: string | null) {
+  const text = String(value || "").trim();
+  if (!text) return "unknown";
+  const [name, domain] = text.split("@");
+  if (domain) {
+    const visible = name.length <= 2 ? `${name[0] || "*"}*` : `${name.slice(0, 2)}***`;
+    return `${visible}@${domain}`;
+  }
+  if (text.length <= 3) return `${text[0] || "*"}***`;
+  return `${text.slice(0, 2)}***${text.slice(-1)}`;
+}
+
+function getRequestIp(ctx: { req: { ip?: string; socket: { remoteAddress?: string } } }) {
+  return ctx.req.ip || ctx.req.socket.remoteAddress || "unknown";
+}
+
 function parseEmailWhitelist(value?: string | null) {
   return String(value || "")
     .split(/[,，]/)
@@ -138,13 +154,17 @@ export const authRouter = router({
 
   sendEmailCode: publicProcedure
     .input(z.object({ email: z.string().email("邮箱格式不正确") }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const config = await getEmailConfig();
-      if (!config.enabled || !config.verifyRegistration) return { skipped: true };
+      if (!config.enabled || !config.verifyRegistration) {
+        console.info(`[Auth] Email verification skipped ip=${getRequestIp(ctx)}`);
+        return { skipped: true };
+      }
       const email = ensureAllowedEmail(input.email, config);
       const code = generateEmailCode();
       emailCodeStore.set(email, { code, expiresAt: Date.now() + 5 * 60 * 1000 });
       await sendVerificationCode(email, code);
+      console.info(`[Auth] Verification email sent target=${maskIdentifier(email)} ip=${getRequestIp(ctx)}`);
       return { success: true, expiresInSeconds: 300 };
     }),
 
@@ -167,9 +187,11 @@ export const authRouter = router({
 
       if (needsCaptcha(ip, input.username)) {
         if (!input.captchaId || input.captchaAnswer === undefined) {
+          console.warn(`[Auth] Login requires captcha username=${maskIdentifier(input.username)} ip=${ip}`);
           throw new Error("CAPTCHA_REQUIRED");
         }
         if (!verifyCaptcha(input.captchaId, input.captchaAnswer)) {
+          console.warn(`[Auth] Login captcha failed username=${maskIdentifier(input.username)} ip=${ip}`);
           throw new Error("验证码错误，请重新输入");
         }
       }
@@ -177,6 +199,7 @@ export const authRouter = router({
       const user = await db.authenticateUser(input.username, input.password);
       if (!user) {
         recordLoginFail(ip, input.username);
+        console.warn(`[Auth] Login failed username=${maskIdentifier(input.username)} ip=${ip}`);
         if (needsCaptcha(ip, input.username)) {
           throw new Error("CAPTCHA_REQUIRED_AFTER_FAIL");
         }
@@ -186,6 +209,7 @@ export const authRouter = router({
       clearLoginFail(ip, input.username);
       const token = jwt.sign({ userId: user.id }, ENV.cookieSecret, { expiresIn: "10d" });
       ctx.res.cookie(COOKIE_NAME, token, getSessionCookieOptions(ctx.req));
+      console.info(`[Auth] Login success userId=${user.id} username=${maskIdentifier(user.username)} ip=${ip}`);
       const { password, ...safeUser } = user;
       return safeUser;
     }),
@@ -200,14 +224,16 @@ export const authRouter = router({
       captchaId: z.string(),
       captchaAnswer: z.number(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       if (!verifyCaptcha(input.captchaId, input.captchaAnswer)) {
+        console.warn(`[Auth] Register captcha failed username=${maskIdentifier(input.username)} ip=${getRequestIp(ctx)}`);
         throw new Error("验证码错误，请重新输入");
       }
       const emailConfig = await getEmailConfig();
       const usernameEmail = ensureAllowedEmail(input.username, emailConfig);
       const existing = await db.getUserByUsername(usernameEmail);
       if (existing) {
+        console.warn(`[Auth] Register rejected duplicate username=${maskIdentifier(usernameEmail)} ip=${getRequestIp(ctx)}`);
         throw new Error("用户名已存在");
       }
       let verifiedEmail = false;
@@ -228,12 +254,16 @@ export const authRouter = router({
         emailVerified: verifiedEmail,
         emailVerifiedAt: verifiedEmail ? new Date() : null,
       });
+      console.info(`[Auth] Register success userId=${id} username=${maskIdentifier(usernameEmail)} emailVerified=${verifiedEmail} ip=${getRequestIp(ctx)}`);
       return { id, message: "注册成功，请联系管理员开通权限" };
     }),
 
   logout: publicProcedure.mutation(({ ctx }) => {
     const cookieOptions = getSessionCookieOptions(ctx.req);
     ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+    if (ctx.user) {
+      console.info(`[Auth] Logout userId=${ctx.user.id} username=${maskIdentifier(ctx.user.username)} ip=${getRequestIp(ctx)}`);
+    }
     return { success: true } as const;
   }),
 
@@ -245,8 +275,10 @@ export const authRouter = router({
     .mutation(async ({ input, ctx }) => {
       const success = await db.changeUserPassword(ctx.user.id, input.oldPassword, input.newPassword);
       if (!success) {
+        console.warn(`[Auth] Change password failed userId=${ctx.user.id}`);
         throw new Error("当前密码错误");
       }
+      console.info(`[Auth] Password changed userId=${ctx.user.id}`);
       return { success: true };
     }),
 
@@ -261,6 +293,7 @@ export const authRouter = router({
         ...input,
         displayRemark: input.displayRemark === undefined ? undefined : input.displayRemark?.trim() || null,
       });
+      console.info(`[Auth] Profile updated userId=${ctx.user.id}`);
       return { success: true };
     }),
 });

@@ -5,6 +5,22 @@ import { FORWARD_TYPES } from "../../shared/forwardTypes";
 import { ensureAdminOrSelf, refreshUserForwardEndpoints } from "./helpers";
 import { getEmailConfig, sendMail } from "../email";
 
+function actorLabel(ctx: { user?: { id: number; username?: string } | null }) {
+  return ctx.user ? `adminId=${ctx.user.id}` : "adminId=unknown";
+}
+
+function maskIdentifier(value?: string | null) {
+  const text = String(value || "").trim();
+  if (!text) return "unknown";
+  const [name, domain] = text.split("@");
+  if (domain) {
+    const visible = name.length <= 2 ? `${name[0] || "*"}*` : `${name.slice(0, 2)}***`;
+    return `${visible}@${domain}`;
+  }
+  if (text.length <= 3) return `${text[0] || "*"}***`;
+  return `${text.slice(0, 2)}***${text.slice(-1)}`;
+}
+
 export const usersRouter = router({
     list: adminProcedure.query(async () => {
       return db.getAllUsers();
@@ -17,42 +33,49 @@ export const usersRouter = router({
         email: z.string().email().optional(),
         canAddRules: z.boolean().default(false),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const existing = await db.getUserByUsername(input.username);
         if (existing) {
+          console.warn(`[Users] Create user rejected duplicate username=${maskIdentifier(input.username)} ${actorLabel(ctx)}`);
           throw new Error("用户名已存在");
         }
         // 安全限制：通过后台创建的用户一律为普通用户，不允许创建新管理员
         const id = await db.createUser({ ...input, role: "user" });
+        console.info(`[Users] Created user userId=${id} username=${maskIdentifier(input.username)} ${actorLabel(ctx)}`);
         return { id };
       }),
     updateRole: adminProcedure
       .input(z.object({ userId: z.number(), role: z.enum(["user", "admin"]) }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         // 安全限制：不允许提升用户为管理员，也不允许修改已有管理员的角色
         if (input.role === "admin") {
+          console.warn(`[Users] Role update rejected userId=${input.userId} requestedRole=admin ${actorLabel(ctx)}`);
           throw new Error("出于安全考虑，不允许将用户提升为管理员");
         }
         const target = await db.getUserById(input.userId);
         if (target?.role === "admin") {
+          console.warn(`[Users] Role update rejected target is admin userId=${input.userId} ${actorLabel(ctx)}`);
           throw new Error("不允许修改管理员账户的角色");
         }
         await db.updateUserRole(input.userId, input.role);
         await db.setUserForwardAccess(input.userId, false);
         await refreshUserForwardEndpoints(input.userId, "user-role-updated");
+        console.info(`[Users] Updated role userId=${input.userId} role=${input.role} ${actorLabel(ctx)}`);
         return { success: true };
       }),
     resetPassword: adminProcedure
       .input(z.object({ userId: z.number(), newPassword: z.string().min(6) }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         await db.resetUserPassword(input.userId, input.newPassword);
+        console.info(`[Users] Reset password userId=${input.userId} ${actorLabel(ctx)}`);
         return { success: true };
       }),
     delete: adminProcedure
       .input(z.object({ userId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         await db.deleteUserPermissions(input.userId);
         await db.deleteUser(input.userId);
+        console.info(`[Users] Deleted user userId=${input.userId} ${actorLabel(ctx)}`);
         return { success: true };
       }),
     /** 获取某用户的主机权限列表 */
@@ -64,8 +87,9 @@ export const usersRouter = router({
     /** 设置某用户的主机权限（全量替换） */
     setHostPermissions: adminProcedure
       .input(z.object({ userId: z.number(), hostIds: z.array(z.number()) }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         await db.setUserHostPermissions(input.userId, input.hostIds);
+        console.info(`[Users] Updated host permissions userId=${input.userId} count=${input.hostIds.length} ${actorLabel(ctx)}`);
         return { success: true };
       }),
     /** 获取所有用户的主机权限映射 */
@@ -79,8 +103,9 @@ export const usersRouter = router({
       }),
     setTunnelPermissions: adminProcedure
       .input(z.object({ userId: z.number(), tunnelIds: z.array(z.number()) }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         await db.setUserTunnelPermissions(input.userId, input.tunnelIds);
+        console.info(`[Users] Updated tunnel permissions userId=${input.userId} count=${input.tunnelIds.length} ${actorLabel(ctx)}`);
         return { success: true };
       }),
     sendEmail: adminProcedure
@@ -89,7 +114,7 @@ export const usersRouter = router({
         subject: z.string().trim().min(1).max(120),
         content: z.string().trim().min(1).max(4000),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const config = await getEmailConfig();
         if (!config.enabled) throw new Error("邮箱服务未启用");
         const user = await db.getUserById(input.userId);
@@ -101,6 +126,7 @@ export const usersRouter = router({
           text: input.content.trim(),
           html: input.content.trim().replace(/\n/g, "<br />"),
         });
+        console.info(`[Users] Sent email userId=${input.userId} subjectLength=${input.subject.trim().length} ${actorLabel(ctx)}`);
         return { success: true };
       }),
     allTunnelPermissions: adminProcedure.query(async () => {
@@ -136,7 +162,7 @@ export const usersRouter = router({
         allowedForwardTypes: z.string().nullable().optional(),
         allowForwardXTunnel: z.boolean().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const { userId, expiresAt, allowedForwardTypes, ...rest } = input;
         const data: any = { ...rest };
         if (expiresAt !== undefined) {
@@ -149,23 +175,26 @@ export const usersRouter = router({
           data.allowedForwardTypes = allowedForwardTypes === null || valid.length === FORWARD_TYPES.length ? null : valid.join(",");
         }
         await db.updateUserTrafficSettings(userId, data);
+        console.info(`[Users] Updated traffic settings userId=${userId} keys=${Object.keys(data).join(",") || "none"} ${actorLabel(ctx)}`);
         return { success: true };
       }),
     setForwardAccess: adminProcedure
       .input(z.object({ userId: z.number(), enabled: z.boolean() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const target = await db.getUserById(input.userId);
         if (!target) throw new Error("用户不存在");
         if (target.role === "admin") throw new Error("管理员默认拥有全部权限");
         await db.setUserForwardAccess(input.userId, input.enabled);
         await refreshUserForwardEndpoints(input.userId, input.enabled ? "user-forward-enabled" : "user-forward-disabled");
+        console.info(`[Users] Forward access ${input.enabled ? "enabled" : "disabled"} userId=${input.userId} ${actorLabel(ctx)}`);
         return { success: true };
       }),
     /** 手动重置用户流量 */
     resetTraffic: adminProcedure
       .input(z.object({ userId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         await db.resetUserTraffic(input.userId);
+        console.info(`[Users] Reset traffic userId=${input.userId} ${actorLabel(ctx)}`);
         return { success: true };
       }),
   });

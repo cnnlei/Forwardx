@@ -4,7 +4,7 @@ import * as db from "../db";
 import { ENV } from "../env";
 import { spawn } from "child_process";
 import fs from "fs";
-import { clearPanelLogs, getPanelLogs, getPanelLogSummary } from "./panelLogger";
+import { clearPanelLogs, formatPanelLogsForExport, getFilteredPanelLogs, getPanelLogSummary } from "./panelLogger";
 import { approveMigrationRequest, createMigrationCode, getCurrentMigrationCode, rejectMigrationRequest } from "../migrationCodes";
 import { sendMail } from "../email";
 import { refreshTelegramBotProfile, resetTelegramBotPolling, startTelegramBot } from "../telegramBot";
@@ -25,7 +25,7 @@ import {
 export const REPO_URL = "https://github.com/poouo/Forwardx";
 /** Telegram 双向消息机器人：用户可通过此反馈问题、接收补充信息 */
 export const TELEGRAM_BOT_URL = "https://t.me/miyin_private_bot";
-export const APP_VERSION = "2.2.57";
+export const APP_VERSION = "2.2.58";
 export const AGENT_VERSION = "2.2.45";
 const UPDATE_CHECK_COOLDOWN_MS = 60 * 1000;
 const MANUAL_LOCAL_UPGRADE_COMMAND =
@@ -37,6 +37,7 @@ const forwardProtocolSettingsSchema = z.object(
     [...FORWARD_TYPES, ...TUNNEL_PROTOCOLS].map((key) => [key, z.boolean().optional()])
   ) as Record<(typeof FORWARD_TYPES[number] | typeof TUNNEL_PROTOCOLS[number]), z.ZodOptional<z.ZodBoolean>>
 );
+const panelLogLevelSchema = z.enum(["all", "log", "info", "warn", "error"]);
 
 type UpdateInfo = {
   currentVersion: string;
@@ -490,14 +491,32 @@ export const systemRouter = router({
 
   /** 启动后台升级任务。实际命令由 FORWARDX_UPGRADE_COMMAND 提供。 */
   panelLogs: adminProcedure
-    .input(z.object({ level: z.enum(["all", "log", "info", "warn", "error"]).default("all") }).optional())
+    .input(z.object({ level: panelLogLevelSchema.default("all") }).optional())
     .query(({ input }) => {
       const level = input?.level || "all";
-      const logs = getPanelLogs();
       return {
-        logs: level === "all" ? logs : logs.filter((entry) => entry.level === level),
+        logs: getFilteredPanelLogs(level),
         summary: getPanelLogSummary(),
         checkedAt: new Date().toISOString(),
+      };
+    }),
+
+  exportPanelLogs: adminProcedure
+    .input(z.object({ level: panelLogLevelSchema.default("all") }).optional())
+    .mutation(({ input }) => {
+      const level = input?.level || "all";
+      const exported = formatPanelLogsForExport(level, {
+        "App Version": APP_VERSION,
+        "Agent Version": AGENT_VERSION,
+        "Repository": REPO_URL,
+      });
+      const timestamp = exported.generatedAt.replace(/[:.]/g, "-");
+      console.info(`[PanelLogs] Exported panel logs level=${level} count=${exported.count}`);
+      return {
+        filename: `forwardx-panel-logs-${level}-${timestamp}.txt`,
+        mimeType: "text/plain;charset=utf-8",
+        content: exported.content,
+        count: exported.count,
       };
     }),
 

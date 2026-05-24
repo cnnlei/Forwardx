@@ -4,20 +4,45 @@ import { getDb, insertAndGetId, nowDate } from "../dbRuntime";
 
 // ==================== Host Queries ====================
 
+const HOST_ONLINE_TTL_MS = 90 * 1000;
+
+function isFreshHeartbeat(lastHeartbeat: unknown) {
+  if (!lastHeartbeat) return false;
+  const time = new Date(lastHeartbeat as any).getTime();
+  return Number.isFinite(time) && Date.now() - time <= HOST_ONLINE_TTL_MS;
+}
+
+function withComputedOnline<T extends { isOnline?: boolean; lastHeartbeat?: unknown }>(host: T): T {
+  return { ...host, isOnline: !!host.isOnline && isFreshHeartbeat(host.lastHeartbeat) };
+}
+
+export async function markStaleHostsOffline() {
+  const db = await getDb();
+  if (!db) return;
+  const cutoff = new Date(Date.now() - HOST_ONLINE_TTL_MS);
+  await db.update(hosts).set({ isOnline: false, updatedAt: nowDate() }).where(
+    sql`${hosts.isOnline} = ${true} AND (${hosts.lastHeartbeat} IS NULL OR ${hosts.lastHeartbeat} < ${cutoff})`
+  );
+}
+
 export async function getHosts(userId?: number) {
   const db = await getDb();
   if (!db) return [];
+  await markStaleHostsOffline();
   if (userId) {
-    return db.select().from(hosts).where(eq(hosts.userId, userId)).orderBy(desc(hosts.createdAt));
+    const rows = await db.select().from(hosts).where(eq(hosts.userId, userId)).orderBy(desc(hosts.createdAt));
+    return rows.map(withComputedOnline);
   }
-  return db.select().from(hosts).orderBy(desc(hosts.createdAt));
+  const rows = await db.select().from(hosts).orderBy(desc(hosts.createdAt));
+  return rows.map(withComputedOnline);
 }
 
 export async function getHostById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
+  await markStaleHostsOffline();
   const r = await db.select().from(hosts).where(eq(hosts.id, id)).limit(1);
-  return r[0];
+  return r[0] ? withComputedOnline(r[0]) : undefined;
 }
 
 export async function createHost(host: InsertHost) {
