@@ -17,8 +17,7 @@ client/dist/
 *.db-shm
 
 # IDE
-.vscode/*
-!.vscode/settings.json
+.vscode/
 .idea/
 *.swp
 *.swo
